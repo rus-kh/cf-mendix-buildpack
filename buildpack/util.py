@@ -96,20 +96,8 @@ def download_and_unpack(
 
     _delete_other_versions(cache_dir, file_name, alias)
 
-    logging.debug(
-        "Looking for [{cached_location}] in cache...".format(
-            cached_location=cached_location
-        )
-    )
+    download(url, cached_location)
 
-    if not os.path.isfile(cached_location):
-        download(url, cached_location)
-    else:
-        logging.debug(
-            "Found in cache, not downloading [{cached_location}]".format(
-                cached_location=cached_location
-            )
-        )
     if destination:
         mkdir_p(destination)
         if unpack:
