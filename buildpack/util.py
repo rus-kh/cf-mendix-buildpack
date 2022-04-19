@@ -132,7 +132,7 @@ def resolve_dependency(
     vendored_location = _find_file_in_directory(file_name, vendor_dir)
     cached_location = os.path.join(cache_dir, file_name)
     if not is_path_accessible(vendored_location):
-        logging.info("Downloading dependancy from %s", vendored_location)
+        logging.info("Downloading dependancy from [{}]".format(vendored_location))
         # if ignore_cache or not is_path_accessible(cached_location):
         download(url, cached_location)
         # else:
