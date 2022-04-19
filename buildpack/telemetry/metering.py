@@ -22,7 +22,7 @@ def _download(buildpack_dir, build_path, cache_dir):
         # util.get_blobstore_url(
         #     "{}/{}".format(SIDECAR_URL_ROOT, SIDECAR_ARCHIVE)
         # ),
-        "https://mx-cdn-test2.s3.eu-west-1.amazonaws.com/mx-buildpack/experimental/metering/metering-sidecar-test.tar.gz", # hardcoded for test deployment
+        "https://artifactory.rnd.mendix.com/artifactory/cloud-snapshot-local/com/mendix/cloud/metering-sidecar/v2.0.0_MET-597_Delta_processing_468645-SNAPSHOT/metering-sidecar-linux-amd64-v2.0.0_MET-597_Delta_processing_468645-SNAPSHOT.tar.gz", # hardcoded for test deployment
         os.path.join(build_path, NAMESPACE),
         buildpack_dir=buildpack_dir,
         cache_dir=cache_dir,
