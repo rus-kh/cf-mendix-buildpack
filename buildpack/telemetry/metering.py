@@ -92,7 +92,7 @@ def stage(buildpack_path, build_path, cache_dir):
     try:
         if _is_usage_metering_enabled():
             logging.info("Usage metering is enabled")
-            _download(buildpack_path, build_path, cache_dir)
+            _download(buildpack_path, build_path)
 
             # project_id = _get_project_id(
             #     os.path.join(build_path, "model", "metadata.json")
