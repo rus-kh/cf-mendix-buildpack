@@ -380,7 +380,7 @@ def resolve_metering_dependency(
         destination,
         buildpack_dir,
         cache_dir="/tmp/downloads",
-        ignore_cache=False,
+        ignore_cache=True,
         unpack=True,
         unpack_strip_directories=False,
         overrides=None,
