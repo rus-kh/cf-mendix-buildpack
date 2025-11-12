@@ -328,12 +328,12 @@ def resolve_dependency(
     cached_location = os.path.join(cache_dir, file_name)
     CACHED_DEPENDENCIES.append(cached_location)
     if not is_path_accessible(vendored_location):
-        if ignore_cache or not is_path_accessible(cached_location):
+        #if ignore_cache or not is_path_accessible(cached_location):
             download(url, cached_location)
-        else:
-            logging.debug(
-                "Found dependency in cache, not downloading [%s]", cached_location
-            )
+        # else:
+        #     logging.debug(
+        #         "Found dependency in cache, not downloading [%s]", cached_location
+        #     )
     else:
         shutil.copy(vendored_location, cached_location)
         logging.debug(
