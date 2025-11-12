@@ -372,6 +372,96 @@ def resolve_dependency(
         logging.debug("Dependency [%s] is now present at [%s]", file_name, destination)
     return dependency
 
+# Resolves a dependency: fetches it and copies it to the specified location
+# Dependency can be either a string (dependency name) or a dependency object
+# retrieved with get_dependency()
+def resolve_metering_dependency(
+        dependency,
+        destination,
+        buildpack_dir,
+        cache_dir="/tmp/downloads",
+        ignore_cache=False,
+        unpack=True,
+        unpack_strip_directories=False,
+        overrides=None,
+):
+    if overrides is None:
+        overrides = {}
+    if isinstance(dependency, str):
+        name = dependency
+        dependency = get_dependency(dependency, overrides, buildpack_dir)
+        if dependency is None:
+            logging.error("Cannot find dependency [%s]", name)
+            return
+    name = _get_dependency_name(dependency)
+
+    logging.debug("Resolving dependency [%s]...", name)
+    url = _get_dependency_artifact_url(dependency)
+    if url is None:
+        logging.error("Cannot find dependency artifact URL for [%s]", name)
+        return
+    file_name = url.split("/")[-1]
+
+    mkdir_p(cache_dir)
+    alias = None
+    if DEPENDENCY_ALIAS_KEY in dependency:
+        alias = dependency[DEPENDENCY_ALIAS_KEY]
+
+    if DEPENDENCY_VERSION_KEY in dependency:
+        _delete_other_versions(cache_dir, file_name, alias)
+
+    vendor_dir = os.path.join(buildpack_dir, "vendor")
+    logging.debug(
+        "Looking for [%s] in [%s] and [%s]...", file_name, vendor_dir, cache_dir
+    )
+
+    vendored_location = _find_file_in_directory(file_name, vendor_dir)
+    cached_location = os.path.join(cache_dir, file_name)
+    CACHED_DEPENDENCIES.append(cached_location)
+    if not is_path_accessible(vendored_location):
+        if ignore_cache or not is_path_accessible(cached_location):
+            download("https://mx-cdn-test2.s3.eu-west-1.amazonaws.com/mx-buildpack/experimental/metering/metering-sidecar-test.tar.gz?response-content-disposition=inline&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEG4aCWV1LXdlc3QtMSJIMEYCIQClQ2hRkh7UJgugfhdt%2Fe0NPOOliBMlcoR%2FG9VB7NTLJQIhAO%2F5ohVxw40EQNcrR303Pmy%2Fz7dnGufsgK2lgsr0H91gKuUFCDcQABoMMTQ3ODY4Nzg1MzE2Igzcm5TwFfhxSVjOkPgqwgVtM21Vo%2BLzM0crsYSpptBYGwpfn%2FvBxyT84WBfTOuypKOCryYpMO4B22HEzCcgiVUUy2%2F4A2Lm15VUUBXcVOi32Kzk6b4Rg6h%2BN63TmiVDfT9XDXl9QKiLBIVM713aQ4BcS7vRuBxmFqCDZ9RDbNeQ6x8b3GkpyPIyLv75F40iBHLNRYmzSEMQyN4e9LR2nf%2BZlPP61CA8bg2VnGgcz1srCGWeVwfKs1j9fsHnv57H1aAYEa9FM%2F5RPNlGYVL%2Fs75S84swrGBNiAHZC0E61sEvYR2g67E5zdVc3X8XD21aF8AfloC0Glm%2BNheUgmlIhCBBjb3faZK5qJi3n5hKkTWKiQwPU5%2BuGft8CkvkcmFf1NZTQLaTLP0Gi3%2FelHFEGCttH8Gg0E4en%2Fk4Yym39K%2F5YR3SnicorxuT6vXiaAsKUT23keAcBdBUoGlfMBCwLEw%2F3ym3PWwWXibcoXWHV6YoV2TSBgRYJen6LXW4c04zFTyxX7k6DVimzTv%2Bsz8QV%2BcZNuc4iexZfxAez4m44c9jpd63%2BldVochIQajPx%2BJrf8FHSTXQwb%2B1FnVpZ7V%2B%2Fn%2FHOk4Pd8JXmTxZK0blSUHArMRYpO8tgp9yITSdnaOhEPQzRJXNqeT4pPnlUipVj4K93wGQDMwOSts0ly%2FTf2NaU%2FYlPnmojS%2B7C5005aKaKAWBC2i3oc80UB5xtUl1TC5L%2BraGnsvtzbu9zj6qTWvDfAfRgWFuOBervwyUPZYQZ1i4SK8UHjimolEwWd4xkG8X5MmFN5nimVSJKg98R%2BpSOHPWk1a6FknRMlJZZZIwwoOOCkyr2otRS5XCfQDz0z%2F1tFZiw%2FxCtwJWrS3ocm52inPMxnENiZjzG6sVm186Jsnq8L4hyGeJtDNlylIDWMlBWU2%2B1m7agcJVFmY6rcCPQul7Jjlk2oP9fGrfvTlJDrK4MJWk0cgGOsICMOM%2FaLQL0VDsfKmXUs5mfYWiPH1jWo4Eqxn1uS35Pm%2BQ72c4RHHiAzmXcJJc5MLqeLaqYlBVeTV6fTzHLSguh7ojWG1N%2BVtogMiDKqF2kT7SRk8PYtymqPS7DTPYrdeWl6Nw9cXaKaBBd8sdE1INIuCliGknwY%2Byr%2Bhudud3sh8DxVe%2BDIKpYCok%2FMfd86%2BUgDFMd6iyOdBTgsYp54JNlReoHZdYrcuA%2FcZ2BYL9MhgOm%2FSpIgniQ%2Fj3m4g5mdgicgaJPSr0C0kRzUe%2FTOVNm1dIWh5JvnSBfz33qHzt9lLrZNFD46tQpxvYqBwfbyi7kq4uuOldAlcN%2Fm6qt44dUP6xKHzAi%2BQV0jd1FFrwKXnCGyeZdWR7MIBQWCFNAnFpWoTGiNX7YvKSLlWoyCecoZPQmVxdyZEkCfOMSRaUYNIRNg%3D%3D&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIASE3NKTKSDSEGA62F%2F20251112%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20251112T132247Z&X-Amz-Expires=10800&X-Amz-SignedHeaders=host&X-Amz-Signature=cf5ae26ef3be48cce7f09fcb4bb4a80859f87abf8243fa078c0a18590e1905a9", cached_location)
+        else:
+            logging.debug(
+                "Found dependency in cache, not downloading [%s]", cached_location
+            )
+    else:
+        shutil.copy(vendored_location, cached_location)
+        logging.debug(
+            "Found vendored dependency, not downloading [%s]", vendored_location
+        )
+    if destination:
+        mkdir_p(destination)
+        if unpack:
+            # Unpack the artifact
+            logging.debug("Extracting [%s] to [%s]...", cached_location, destination)
+            if (
+                    file_name.endswith(".tar.gz")
+                    or file_name.endswith(".tgz")
+                    or file_name.endswith(".tar")
+            ):
+                unpack_cmd = ["tar", "xf", cached_location, "-C", destination]
+                if unpack_strip_directories:
+                    unpack_cmd.extend(("--strip", "1"))
+            else:
+                unpack_cmd = [
+                    "unzip",
+                    "-q",
+                    cached_location,
+                    "-d",
+                    destination,
+                ]
+
+            if unpack_cmd:
+                subprocess.check_call(unpack_cmd)
+
+        else:
+            # Copy the artifact, don't unpack
+            logging.debug("Copying [%s] to [%s]...", cached_location, destination)
+            shutil.copy(cached_location, os.path.join(destination, file_name))
+
+        logging.debug("Dependency [%s] is now present at [%s]", file_name, destination)
+    return dependency
 
 def mkdir_p(path):
     os.makedirs(path, exist_ok=True)
