@@ -99,7 +99,7 @@ def stage(buildpack_path, build_path, cache_dir):
             )
             config = {"ProjectID": project_id}
 
-            logging.debug("Writing metering sidecar configuration file...")
+            logging.info("Writing metering sidecar configuration file...")
             write_file(
                 os.path.join(build_path, NAMESPACE, SIDECAR_CONFIG_FILE),
                 config,
