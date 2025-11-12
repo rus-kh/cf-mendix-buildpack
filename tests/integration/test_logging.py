@@ -1,5 +1,4 @@
 import json
-import os
 
 from tests.integration import basetest
 
@@ -8,7 +7,7 @@ class TestCaseLogging(basetest.BaseTest):
     def setUp(self):
         super().setUp()
         self.stage_container(
-            "sample-6.2.0.mda",
+            "BuildpackTestApp-mx9-7.mda",
             env_vars={
                 "LOGGING_CONFIG": json.dumps({"Jetty": "TRACE"}),
                 "LOG_RATELIMIT": 500,

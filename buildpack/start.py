@@ -7,19 +7,22 @@ import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from buildpack import (
+from buildpack import util
+from buildpack.databroker import business_events
+from buildpack.core import java, nginx, runtime
+from buildpack.infrastructure import database, storage
+from buildpack.telemetry import (
     appdynamics,
-    databroker,
     datadog,
-    dynatrace,
-    java,
+    fluentbit,
+    splunk,
+    logs,
     metering,
+    metrics,
     mx_java_agent,
     newrelic,
-    nginx,
-    runtime,
     telegraf,
-    util,
+    dynatrace,
 )
 
 
@@ -56,15 +59,24 @@ def _kill_process_group():
             process_group = os.getpgrp()
             os.killpg(process_group, signum)
             logging.debug(
-                "Successfully sent [{}] to process group [{}]".format(
-                    signum.name, process_group
-                ),
+                "Successfully sent [%s] to process group [%s]",
+                signum.name,
+                process_group,
             )
         except OSError as error:
             logging.debug(
-                "Failed to send [{}] to process group [{}]: {}".format(
-                    signum.name, process_group, error
-                )
+                "Failed to send [%s] to process group [%s]: (OSError) %s",
+                signum.name,
+                process_group,
+                error,
+            )
+        except SystemExit as error:
+            # Workaround for UPV4-2859 - https://github.com/python/cpython/issues/103512#issuecomment-1541021187
+            logging.debug(
+                "Failed to send [%s] to process group [%s]: (SystemExit) %s",
+                signum.name,
+                process_group,
+                error,
             )
 
     _kill_process_group_with_signal(signal.SIGTERM)
@@ -77,15 +89,30 @@ def _sigchild_handler(_signo, _stack_frame):
 
 
 # Handler for system termination signal (SIGTERM)
-# This is required for Cloud Foundry: https://docs.cloudfoundry.org/devguide/deploy-apps/app-lifecycle.html#shutdown
+# This is required for Cloud Foundry:
+# https://docs.cloudfoundry.org/devguide/deploy-apps/app-lifecycle.html#shutdown
 def _sigterm_handler(_signo, _stack_frame):
     # Call sys.exit() so that all atexit handlers are explicitly called
     sys.exit()
 
 
+# Handler for user signals (e.g. SIGUSR1 and SIGUSR2)
+# These are specified as Java options in etc/m2ee/m2ee.yaml and handle e.g. OOM errors
+# This handler is extensible and can incorporate handle_sigusr() calls
+# in buildpack components
+def _sigusr_handler(_signo, _stack_frame):
+    # pylint: disable=no-member
+    logging.debug("%s received", signal.Signals(_signo).name)
+    metrics.handle_sigusr(_signo, _stack_frame)
+    # Call sys.exit(1) so that all atexit handlers are explicitly called
+    sys.exit(1)
+
+
 def _register_signal_handlers():
     signal.signal(signal.SIGCHLD, _sigchild_handler)
     signal.signal(signal.SIGTERM, _sigterm_handler)
+    signal.signal(signal.SIGUSR1, _sigusr_handler)
+    signal.signal(signal.SIGUSR2, _sigusr_handler)
 
 
 if os.environ.get("DEBUG_CONTAINER", "false").lower() == "true":
@@ -98,7 +125,6 @@ if os.environ.get("DEBUG_CONTAINER", "false").lower() == "true":
 if __name__ == "__main__":
     m2ee = None
     nginx_process = None
-    databroker_processes = databroker.Databroker()
 
     _register_signal_handlers()
 
@@ -117,60 +143,56 @@ if __name__ == "__main__":
     try:
         if os.getenv("CF_INSTANCE_INDEX") is None:
             logging.warning(
-                "CF_INSTANCE_INDEX environment variable not found, assuming cluster leader responsibility..."
+                "CF_INSTANCE_INDEX environment variable not found, "
+                "assuming cluster leader responsibility..."
             )
-
-        # Set environment variables that the runtime needs for initial setup
-        if databroker.is_enabled():
-            os.environ[
-                "MXRUNTIME_{}".format(databroker.RUNTIME_DATABROKER_FLAG)
-            ] = "true"
 
         # Initialize the runtime
         m2ee = runtime.setup(util.get_vcap_data())
 
-        # Get versions
-        runtime_version = runtime.get_version()
-        java_version = runtime.get_java_version(runtime_version)["version"]
+        # Get versions and names
+        runtime_version = runtime.get_runtime_version()
         model_version = runtime.get_model_version()
+        application_name = util.get_vcap_data()["application_name"]
 
         # Update runtime configuration based on component configuration
+        database.update_config(m2ee)
+        storage.update_config(m2ee)
         java.update_config(
-            m2ee.config._conf["m2ee"], util.get_vcap_data(), java_version
+            m2ee, application_name, util.get_vcap_data(), runtime_version
         )
-        newrelic.update_config(m2ee, util.get_vcap_data()["application_name"])
-        appdynamics.update_config(
-            m2ee, util.get_vcap_data()["application_name"]
-        )
-        dynatrace.update_config(m2ee, util.get_vcap_data()["application_name"])
+        newrelic.update_config(m2ee, application_name)
+        appdynamics.update_config(m2ee)
+        dynatrace.update_config(m2ee)
+        splunk.update_config(m2ee)
+        fluentbit.update_config(m2ee)
         mx_java_agent.update_config(m2ee)
-        telegraf.update_config(m2ee, util.get_vcap_data()["application_name"])
-        (
-            databroker_jmx_instance_cfg,
-            databroker_jmx_config_files,
-        ) = databroker_processes.get_datadog_config(
-            datadog._get_user_checks_dir()
-        )
+        telegraf.update_config(m2ee, application_name)
         datadog.update_config(
             m2ee,
             model_version=model_version,
             runtime_version=runtime_version,
-            extra_jmx_instance_config=databroker_jmx_instance_cfg,
-            jmx_config_files=databroker_jmx_config_files,
         )
-        nginx.configure(m2ee)
+        nginx.update_config()
+        logging.debug(dir(business_events))
+        business_events.update_config(m2ee, util.get_vcap_services_data())
 
         # Start components and runtime
-        telegraf.run()
+        telegraf.run(runtime_version)
         datadog.run(model_version, runtime_version)
-        metering.run()
-        runtime.run(m2ee)
+        fluentbit.run(model_version, runtime_version)
+        logs.run(m2ee)
+        runtime.run(m2ee, logs.get_loglevels())
+        metrics.run(m2ee)
+        appdynamics.run()
         nginx.run()
 
-        # Wait for the runtime to be ready before starting Databroker
-        if databroker.is_enabled():
-            runtime.await_database_ready(m2ee)
-            databroker_processes.run(runtime.database.get_config())
+        # Block of code where the order is important
+        # Wait for the Runtime to be ready before starting User-metering Sidecar to not block the Runtime from start
+        runtime.await_database_ready(m2ee)
+        metering.run()
+        # End of the block where order is important
+
     except RuntimeError as re:
         # Only the runtime throws RuntimeErrors (no pun intended)
         # Don't use the stack trace for these

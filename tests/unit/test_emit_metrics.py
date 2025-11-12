@@ -1,11 +1,13 @@
 import copy
 from unittest import TestCase
-from unittest.mock import Mock
+from unittest.mock import Mock, patch, MagicMock
 
-from buildpack.runtime_components.metrics import (
+from buildpack.telemetry.metrics import (
     FreeAppsMetricsEmitterThread,
     PaidAppsMetricsEmitterThread,
+    MXVERSION_MICROMETER,
 )
+from lib.m2ee.version import MXVersion
 
 
 class TestNegativeMemoryMetricsThrowError(TestCase):
@@ -43,6 +45,10 @@ class TestNegativeMemoryMetricsThrowError(TestCase):
         with self.assertRaises(RuntimeError):
             PaidAppsMetricsEmitterThread._sanity_check_m2ee_stats(m2ee_stats)
 
+    @patch(
+        "buildpack.core.runtime.get_runtime_version",
+        MagicMock(return_value=MXVersion(7.23)),
+    )
     def test_underlying_log_message_propagates_upwards(self):
         m2ee = Mock()
         m2ee_stats = {
@@ -66,6 +72,12 @@ class TestNegativeMemoryMetricsThrowError(TestCase):
 
 class TestFreeAppsMetricsEmitter(TestCase):
     def setUp(self):
+        self.addCleanup(patch.stopall)
+        patch(
+            "buildpack.core.runtime.get_runtime_version",
+            return_value=MXVERSION_MICROMETER,
+        ).start()
+
         self.mock_user_session_metrics = {
             "sessions": {
                 "named_users": 0,
@@ -82,7 +94,7 @@ class TestFreeAppsMetricsEmitter(TestCase):
             return_value=copy.deepcopy(self.mock_user_session_metrics)
         )
         self.metrics_emitter.emit = Mock()
-        self.metrics_emitter.setDaemon(True)
+        self.metrics_emitter.daemon = True
 
     def test_inject_user_session_metrics(self):
         stats = {"key": "value"}

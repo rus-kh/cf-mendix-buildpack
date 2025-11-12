@@ -6,6 +6,7 @@ from lib.m2ee.munin import (
     _get_jre_major_version_from_version_string,
 )
 from lib.m2ee.version import MXVersion
+from buildpack.core.java import _get_major_version
 
 
 class TestJREVersionFromString(TestCase):
@@ -24,9 +25,20 @@ class TestJREVersionFromString(TestCase):
 
     def test_new_style_jre(self):
         version_string = "11.0.3"
-        self.assertEqual(
-            11, _get_jre_major_version_from_version_string(version_string)
+        self.assertEqual(11, _get_jre_major_version_from_version_string(version_string))
+
+    def test_jre_get_major_version(self):
+        jre_versions = (
+            ("1.8.0_202", 8),
+            ("8u233", 8),
+            ("11.0.3", 11),
         )
+        for version_string, major_version in jre_versions:
+            with self.subTest():
+                self.assertEqual(
+                    major_version,
+                    _get_major_version(version_string),
+                )
 
 
 class TestGuessJavaVersion(TestCase):
@@ -37,9 +49,7 @@ class TestGuessJavaVersion(TestCase):
         )
         runtime_version = MXVersion("7.2.3.7.55882")
         stats = {}
-        guessed_version = _guess_java_version(
-            m2ee_about, runtime_version, stats
-        )
+        guessed_version = _guess_java_version(m2ee_about, runtime_version, stats)
         self.assertEqual(8, guessed_version)
 
     def test_guess_java11(self):
@@ -49,9 +59,7 @@ class TestGuessJavaVersion(TestCase):
         )
         runtime_version = MXVersion("8.7.0.1476")
         stats = {}
-        guessed_version = _guess_java_version(
-            m2ee_about, runtime_version, stats
-        )
+        guessed_version = _guess_java_version(m2ee_about, runtime_version, stats)
         self.assertEqual(11, guessed_version)
 
     def test_guess_mendix_6_with_missing_java_version(self):
@@ -60,14 +68,10 @@ class TestGuessJavaVersion(TestCase):
         This is reachable in CloudV4 for Mendix runtimes <= 6.5.0, as the
         runtime there does not expose the Java version from the about response.
         """
-        m2ee_about = M2EEResponse(
-            action="about", json={"feedback": {}, "result": 0}
-        )
+        m2ee_about = M2EEResponse(action="about", json={"feedback": {}, "result": 0})
         runtime_version = MXVersion("6.1.0")
         stats = {}
-        guessed_version = _guess_java_version(
-            m2ee_about, runtime_version, stats
-        )
+        guessed_version = _guess_java_version(m2ee_about, runtime_version, stats)
         self.assertEqual(8, guessed_version)
 
     def test_guess_mendix_5_java_7_with_missing_java_version(self):
@@ -79,14 +83,10 @@ class TestGuessJavaVersion(TestCase):
         theoretical implementation to be on the safe side.
         This may be overly defensive.
         """
-        m2ee_about = M2EEResponse(
-            action="about", json={"feedback": {}, "result": 0}
-        )
+        m2ee_about = M2EEResponse(action="about", json={"feedback": {}, "result": 0})
         runtime_version = MXVersion("5.21.0")
         stats = {"memory": {"used_nonheap": 2, "code": 1, "permanent": 1}}
-        guessed_version = _guess_java_version(
-            m2ee_about, runtime_version, stats
-        )
+        guessed_version = _guess_java_version(m2ee_about, runtime_version, stats)
         self.assertEqual(7, guessed_version)
 
     def test_guess_mendix_5_java_8_with_missing_java_version(self):
@@ -98,24 +98,16 @@ class TestGuessJavaVersion(TestCase):
         theoretical implementation to be on the safe side.
         This may be overly defensive.
         """
-        m2ee_about = M2EEResponse(
-            action="about", json={"feedback": {}, "result": 0}
-        )
+        m2ee_about = M2EEResponse(action="about", json={"feedback": {}, "result": 0})
         runtime_version = MXVersion("5.21.0")
         # Non-matching values means Java 8. Apparently!
         stats = {"memory": {"used_nonheap": 0, "code": 123, "permanent": 345}}
-        guessed_version = _guess_java_version(
-            m2ee_about, runtime_version, stats
-        )
+        guessed_version = _guess_java_version(m2ee_about, runtime_version, stats)
         self.assertEqual(8, guessed_version)
 
     def test_guess_future_mendix_versions_doesnt_error(self):
-        m2ee_about = M2EEResponse(
-            action="about", json={"feedback": {}, "result": 0}
-        )
+        m2ee_about = M2EEResponse(action="about", json={"feedback": {}, "result": 0})
         runtime_version = MXVersion("6.1.0")
         stats = {}
-        guessed_version = _guess_java_version(
-            m2ee_about, runtime_version, stats
-        )
+        guessed_version = _guess_java_version(m2ee_about, runtime_version, stats)
         self.assertEqual(8, guessed_version)

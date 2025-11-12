@@ -1,0 +1,68 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      skip_tests:
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      version_tag:
+        description: "Auto-generated semantic version tag"
+        value: ${{ jobs.get-version.outputs.version_tag }}
+      current_version_tag:
+        description: "Current semantic version tag"
+        value: ${{ jobs.get-version.outputs.current_version_tag }}
+
+jobs:
+  get-version:
+    name: Get semantic versions
+    runs-on: ubuntu-latest
+    outputs:
+      version_tag: ${{ steps.autogenerate-version.outputs.version_tag }}
+      current_version_tag: ${{ steps.get-current-version.outputs.current_version_tag}}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Get current version
+        id: get-current-version
+        run: |
+          CURRENT_VERSION_TAG=$(git tag --list --merged HEAD --sort=-version:refname "v*" | head -n 1)
+          echo "::set-output name=current_version_tag::${CURRENT_VERSION_TAG}"
+      - name: Auto-generate future version
+        id: autogenerate-version
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "v"
+          major_pattern: "(major)"
+          minor_pattern: "(minor)"
+          version_format: "${major}.${minor}.${patch}-pre${increment}"
+  build:
+    name: Build
+    needs: get-version
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.10.14
+          cache: pip
+      - name: Install Python requirements
+        run: make install_requirements
+      - name: Lint
+        if: ${{ inputs.skip_tests == false }}
+        run: make lint
+      - name: Run unit tests
+        if: ${{ inputs.skip_tests == false }}
+        run: make test_unit
+      - name: Build
+        run: VERSION=${{ needs.get-version.outputs.version_tag }} make build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          overwrite: true

@@ -1,41 +1,34 @@
 name: Scan with Veracode
 
-on: 
+on:
   pull_request:
     types: [closed]
     branches:
       - master
 
 jobs:
-  pre:
-    runs-on: ubuntu-latest
-    outputs:
-      skip: ${{ steps.skip-check.outputs.should_skip }}
-    steps:
-    - id: skip-check
-      uses: fkirc/skip-duplicate-actions@master
-      with:
-        github_token: ${{ github.token }}
-        paths_ignore: '["**.md", "dev/**"]'
+  build:
+    name: Build
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_tests: true
   veracode-scan:
     name: Perform scan
     runs-on: ubuntu-latest
-    needs: pre
+    needs: build
     steps:
-      - name: Download PR artifact
-        uses: dawidd6/action-download-artifact@v2
+      - uses: actions/download-artifact@v4
         with:
-          workflow: test.yml
-          pr: ${{github.event.pull_request.number}}
           name: dist
+          path: dist
       - name: Upload and scan
         uses: veracode/veracode-uploadandscan-action@master
+        continue-on-error: true
         with:
-          filepath: 'cf-mendix-buildpack.zip'
-          vid: '${{ secrets.VERACODE_API_ID }}'
-          vkey: '${{ secrets.VERACODE_API_KEY }}'
-          appname: '${{ secrets.VERACODE_APP_NAME }}'
-          sandboxid: '${{ secrets.VERACODE_SANDBOX_ID }}'
+          filepath: dist/cf-mendix-buildpack.zip
+          vid: ${{ secrets.VERACODE_API_ID }}
+          vkey: ${{ secrets.VERACODE_API_KEY }}
+          appname: ${{ secrets.VERACODE_APP_NAME }}
+          sandboxid: ${{ secrets.VERACODE_SANDBOX_ID }}
           scantimeout: 15
-          criticality: 'VeryLow'
-          
+          criticality: VeryLow

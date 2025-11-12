@@ -40,7 +40,7 @@ http {
     gzip_types text/plain text/css text/js text/xml text/javascript application/javascript application/x-javascript application/json application/xml application/xml+rss;
 
     tcp_nopush on;
-    keepalive_timeout 30;
+    keepalive_timeout {{ nginx_keepalive_timeout }};
     absolute_redirect off;
     server_tokens off;
 
@@ -93,7 +93,11 @@ http {
         {%- endmacro %}
         {% for location in locations %}
         location {{ location.path }} {
-            if ($request_uri ~ ^/(.*\.(css|js)|forms/.*|img/.*|pages/.*)\?[0-9]+$) {
+        {% if location.body is not none %}
+        {{ location.body }}
+        }
+        {% else %}
+            if ($request_uri ~ ^/(.*\.(css|js)|forms/.*|img/.*|pages/.*|mxclientsystem/images/.*)\?[0-9]+$) {
                     expires 1y;
             }
         {% if location.path == "/" %}
@@ -114,6 +118,7 @@ http {
             {% endif %}
             {{ location_body(location)|indent }}
         }
+        {% endif %}
         {% endif %}
         {% if location.client_cert_enabled or location.issuer_dn_regex %}
 
@@ -160,4 +165,3 @@ http {
         }
     }
 }
-

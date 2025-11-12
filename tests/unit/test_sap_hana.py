@@ -1,8 +1,9 @@
 import json
 import os
 import urllib.parse
+from unittest import TestCase
 
-from buildpack.runtime_components.database import (
+from buildpack.infrastructure.database import (
     DatabaseConfigurationFactory,
     SapHanaDatabaseConfiguration,
 )
@@ -12,7 +13,7 @@ from buildpack.runtime_components.database import (
 # export PYTHONPATH=<buildpack-root>/lib
 
 
-class TestCaseSapHanaDryRun:
+class TestCaseSapHanaDryRun(TestCase):
 
     sap_hana_vcap_example = """
 {
@@ -83,12 +84,8 @@ class TestCaseSapHanaDryRun:
 
         factory = DatabaseConfigurationFactory()
         assert factory.present_in_vcap("hana") is not None
-        assert factory.present_in_vcap(
-            "hana", tags=["hana", "database", "relational"]
-        )
-        assert factory.present_in_vcap(
-            None, tags=["hana", "database", "relational"]
-        )
+        assert factory.present_in_vcap("hana", tags=["hana", "database", "relational"])
+        assert factory.present_in_vcap(None, tags=["hana", "database", "relational"])
 
         assert factory.get_instance().database_type == "SAPHANA"
 
@@ -142,9 +139,7 @@ class TestCaseSapHanaDryRun:
         assert expected_query_params == queryparams
 
     def test_sap_hana_with_ending_slash(self):
-        expected_query_params = {
-            "currentschema": ["USR_AH5QOFLOWIHFVAJKKG41UZBPD"]
-        }
+        expected_query_params = {"currentschema": ["USR_AH5QOFLOWIHFVAJKKG41UZBPD"]}
         vcap = json.loads(self.sap_hana_vcap_example_with_slash)
 
         sapHanaConfiguration = SapHanaDatabaseConfiguration(
@@ -203,8 +198,6 @@ class TestCaseSapHanaDryRun:
         assert factory.present_in_vcap(
             "hanatrial", tags=["hana", "database", "relational"]
         )
-        assert factory.present_in_vcap(
-            None, tags=["hana", "database", "relational"]
-        )
+        assert factory.present_in_vcap(None, tags=["hana", "database", "relational"])
 
         assert factory.get_instance().database_type == "SAPHANA"

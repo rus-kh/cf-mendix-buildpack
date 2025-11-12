@@ -16,7 +16,7 @@ try:
 except ImportError:
     try:
         import simplejson as json
-    except ImportError as ie:
+    except ImportError:
         logger.critical(
             "Failed to import json as well as simplejson. If "
             "using python 2.5, you need to provide the simplejson "
@@ -33,8 +33,7 @@ class Log:
         self.queries = data["database_queries"]
         if hasattr(self, "start_time"):
             self.end_time_formatted = datetime.datetime.fromtimestamp(
-                (self.start_time + self.duration)  # pylint: disable=no-member
-                // 1000
+                (self.start_time + self.duration) // 1000  # pylint: disable=no-member
             )
             self.start_time_formatted = datetime.datetime.fromtimestamp(
                 self.start_time // 1000  # pylint: disable=no-member
@@ -45,16 +44,17 @@ class Log:
 
     def pretty_format(self, print_queries=True):
         if print_queries:
-            queries = "\n\n".join(
-                [
-                    "query: %s \nduration:%s" % (x["query"], x["duration"])
-                    for x in self.queries
-                ]
-            )
-        elif not print_queries:
-            queries = "Omitting, %s queries in total" % len(self.queries)
-        elif len(self.queries) == 0:
-            queries = " None"
+            if len(self.queries) > 0:
+                queries = "\n\n".join(
+                    [
+                        f"query: {x['query']} \nduration: {x['duration']}"
+                        for x in self.queries
+                    ]
+                )
+            else:
+                queries = " None"
+        else:
+            queries = f"Omitting, {len(self.queries)} queries in total"
 
         if hasattr(self, "user_roles"):
             userroles = ",".join(self.user_roles)  # pylint: disable=no-member
@@ -66,7 +66,8 @@ class Log:
         else:
             form_name = None
 
-        return " \
+        return (
+            " \
 Database queries: %s \n\n \
 RequestId: %s \n \
 Username: %s \n \
@@ -78,18 +79,20 @@ End: %s \n \
 Duration: %sms \n \
 Form: %s \n \
 Original request: %s \n\n \
-" % (
-            queries,
-            self.request_id,
-            self.username,  # pylint: disable=no-member
-            userroles,
-            self.still_running,  # pylint: disable=no-member
-            self.action,
-            self.start_time_formatted,
-            self.end_time_formatted,
-            self.duration,  # pylint: disable=no-member
-            form_name,
-            self.request_content,  # pylint: disable=no-member
+"
+            % (
+                queries,
+                self.request_id,
+                self.username,  # pylint: disable=no-member
+                userroles,
+                self.still_running,  # pylint: disable=no-member
+                self.action,
+                self.start_time_formatted,
+                self.end_time_formatted,
+                self.duration,  # pylint: disable=no-member
+                form_name,
+                self.request_content,  # pylint: disable=no-member
+            )
         )
 
 
@@ -101,7 +104,7 @@ def sort_logs(logs):
 
 
 def print_logs(logs):
-    if len(logs) is 0:
+    if len(logs) == 0:
         print("no logs found")
         return
 

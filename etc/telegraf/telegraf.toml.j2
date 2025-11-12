@@ -10,15 +10,46 @@
     interval = "{{ interval }}s"
     round_interval = true
     metric_batch_size = 1000
-    metric_buffer_limit = 10000
+    metric_buffer_limit = 15000
     collection_jitter = "0s"
     flush_interval = "10s"
     flush_jitter = "5s"
     precision = ""
-    debug = false
-    logfile = ""
+    debug = {{ telegraf_debug_enabled }}
+    logtarget = "file"
+    logfile = "/app/log/telegraf.log"
+    logfile_rotation_max_size = "10MB"
+    logfile_rotation_max_archives = 5
     hostname = "{{ hostname }}"
     omit_hostname = false
+
+# Integration usage monitoring
+{% for integration_name, is_enabled in integration_usages.items() %}
+[[inputs.exec]]
+    commands = ["echo {{ is_enabled }}"]
+    name_override = "integration_usage"
+    interval = "6h"
+    data_format = "value"
+    data_type = "integer"
+    [inputs.exec.tags]
+        app_name = "{{ app_name }}"
+        instance_index = "{{ cf_instance_index }}"
+        integration_name = "{{ integration_name }}"
+        internal_metrics = "true"
+{% endfor %}
+
+# Separate metric for runtime_version
+[[inputs.exec]]
+    commands = ["echo {{ runtime_version }}"]
+    name_override = "runtime_version"
+    interval = "24h"
+    data_format = "value"
+    data_type = "string"
+    [inputs.exec.tags]
+        app_name = "{{ app_name }}"
+        instance_index = "{{ cf_instance_index }}"
+        internal_metrics = "true"
+
 
 {% if statsd_port and not datadog_api_key %}
 # StatsD input for Mendix Java Agent
@@ -39,7 +70,7 @@
 {% endif %}
 
 {% if db_config %}
-{% if not datadog_api_key %}
+{% if not (datadog_api_key or appdynamics_enabled or dynatrace_enabled or newrelic_enabled) %}
 # PostgreSQL input (standard)
 [[inputs.postgresql]]
     address = "postgres://{{ db_config['DatabaseUserName'] }}:{{ db_config['DatabasePassword'] }}@{{ db_config['DatabaseHost'] }}/{{ db_config['DatabaseName'] }}"
@@ -52,16 +83,17 @@
 #   The workaround is to append _rate and _count to those metrics and to do rollup in Datadog based on the Telegraf agent interval settings
 [[inputs.postgresql_extensible]]
     address = "postgres://{{ db_config['DatabaseUserName'] }}:{{ db_config['DatabasePassword'] }}@{{ db_config['DatabaseHost'] }}/{{ db_config['DatabaseName'] }}"
-    
+
     # Drop fields not present in the Datadog Agent PostgreSQL check
     fielddrop = ["datname"]
+    interval = "{{ postgres_metrics_interval }}s"
 
     # Add port tag
     [inputs.postgresql_extensible.tags]
         db = "{{ db_config['DatabaseName'] }}" # Global database tag
         port = "5432"
         {% if database_rate_count_metrics_enabled %}
-        interval = "{{ interval }}s" # Helpful for determining rollup for counter and rate metrics
+        interval = "{{ postgres_metrics_interval }}s"  # Helpful for determining rollup for counter and rate metrics
         {% endif %}
 
     # pg_stat_database metrics (gauges)
@@ -165,7 +197,8 @@
         version = 901
         withdbname = false
         tagvalue = "schema"
-        measurement = "postgresql.table" 
+        measurement = "postgresql.table"
+
     {% if database_rate_count_metrics_enabled %}
 
     # pg_stat_database metrics (rates)
@@ -193,7 +226,6 @@
         sqlquery = """
             SELECT
                 datname,
-                temp_files AS temp_files_rate,
                 temp_files AS temp_files_rate
             FROM pg_stat_database
         """
@@ -254,6 +286,10 @@
     {% if datadog_api_url %}
     url = "{{ datadog_api_url }}"
     {% endif %}
+    # Ignore any micrometer_metrics
+    [outputs.datadog.tagdrop]
+        micrometer_metrics = ["true"]
+        internal_metrics = ["true"]
 {% endif %}
 
 {% if http_outputs %}
@@ -272,5 +308,201 @@
     [outputs.http.tagpass]
         KPI = ["true"]
     {% endif %}
+    # Ignore any micrometer_metrics originating
+    # from influxdb_listener plugin
+    [outputs.http.tagdrop]
+        micrometer_metrics = ["true"]
+        internal_metrics = ["true"]
+
 {% endfor %}
+{% endif %}
+
+{% if appdynamics_enabled %}
+# if AppDynamics is enabled this 'exec' output is activated.
+# The command (python script) reads the metrics from STDIN and transform it
+# to the appropriate form for the AppDynamics Machine Agent HTTP Listener payload.
+[[outputs.exec]]
+    command = ["python3", "{{ appdynamics_output_script_path }}"]
+    timeout = "10s"
+    data_format = "json"
+    # Ignore any micrometer_metrics
+    [outputs.exec.tagdrop]
+        micrometer_metrics = ["true"]
+        internal_metrics = ["true"]
+{% endif %}
+
+{% if dynatrace_enabled %}
+[[outputs.dynatrace]]
+# Your Dynatrace environment URL.
+# For Dynatrace SaaS environments the URL scheme is "https://{your-environment-id}.live.dynatrace.com/api/v2/metrics/ingest"
+# For Dynatrace Managed environments the URL scheme is "https://{your-domain}/e/{your-environment-id}/api/v2/metrics/ingest"
+    url = "{{ dynatrace_config['ingest_url'] }}"
+#
+# Your Dynatrace API token.
+# Create an API token within your Dynatrace environment, by navigating to Access Tokens > Generate new token
+# The API token needs "Ingest metrics" scope permission.
+    api_token = "{{ dynatrace_config['token'] }}"
+#
+# Ignore any metric with micrometer_metrics or internal_metrics tags, since they meant for our TSS/TFR metrics path
+    [outputs.dynatrace.tagdrop]
+        micrometer_metrics = ["true"]
+        internal_metrics = ["true"]
+#
+# Optional dimensions to be added to every metric
+    [outputs.dynatrace.default_dimensions]
+        {% for key, value in dynatrace_config['dimensions'].items() %}
+        {{ key }} = "{{ value }}"
+        {% endfor %}
+{% endif %}
+
+{% if newrelic_enabled %}
+[[outputs.newrelic]]
+    metric_url = "{{ newrelic_config['metrics_base_url'] }}"
+    insights_key = "{{ newrelic_config['api_key'] }}"
+
+    # tagexclude drops any non-relevant tags
+    tagexclude = ["host"]
+
+    # Ignore any micrometer_metrics
+    [outputs.newrelic.tagdrop]
+        micrometer_metrics = ["true"]
+        internal_metrics = ["true"]
+{% endif %}
+
+{% if micrometer_metrics %}
+####################################################################################
+# App metrics via micrometer                                                       #
+####################################################################################
+# Input telegraf input
+[[inputs.influxdb_listener]]
+  ## Address and port to host HTTP listener on
+  service_address = ":8086"
+
+  ## maximum duration before timing out read of the request
+  read_timeout = "10s"
+  ## maximum duration before timing out write of the response
+  write_timeout = "10s"
+
+  ## Maximum allowed HTTP request body size in bytes.
+  ## 0 means to use the default of 32MiB.
+  max_body_size = 0
+
+  [inputs.influxdb_listener.tags]
+  micrometer_metrics = "true"
+  instance_index = "{{ cf_instance_index }}"
+  app_name = "{{ app_name }}"
+
+[[outputs.http]]
+  alias = "mx-trends-metrics"
+
+  ## URL is the address to send metrics to
+  url = "{{ trends_storage_url }}"
+
+  ## Timeout for HTTP message
+  timeout = "10s"
+
+  ## HTTP method, one of: "POST" or "PUT"
+  method = "POST"
+
+  ## Data format to output.
+  data_format = "json"
+  json_timestamp_units = "1ns"
+
+  # tagexclude drops any non-relevant tags
+  tagexclude = ["host"]
+
+  # Drop `mx_runtime_user_login` metrics
+  # We drop them as we don't want it to be part of
+  # the payload which is used for Cloud graphs
+  namedrop = ["mx_runtime_user_login"]
+
+  ## Additional HTTP headers
+  [outputs.http.headers]
+  Content-Type = "application/json"
+  # custom header field
+  Micrometer-Metrics = "true"
+
+  # Pass only those metrics that has below tag set
+  [outputs.http.tagpass]
+  micrometer_metrics = ["true"]
+  internal_metrics = ["true"]
+
+[[outputs.http]]
+  alias = "datalake-metrics"
+
+  # This http output is ONLY to send all the datalake metrics
+  # as a single payload. For instance;
+  #  `mx_runtime_user_login`
+  namepass = ["mx_runtime_user_login"]
+
+  ## URL is the address to send metrics to
+  url = "{{ trends_storage_url }}"
+
+  ## Timeout for HTTP message
+  timeout = "10s"
+
+  # Higher flush interval and batch size, so that we
+  # don't bombard TFR and DataLake with too many requests, but
+  # few requests with bigger payloads
+  metric_batch_size = 2500
+  flush_interval = "30s"
+
+  ## HTTP method, one of: "POST" or "PUT"
+  method = "POST"
+
+  ## Data format to output.
+  data_format = "json"
+  json_timestamp_units = "1ns"
+
+  # include only relevant tags
+  taginclude = ["anonymous_upgrade", "user", "app_name", "instance_index"]
+
+  ## Additional HTTP headers
+  [outputs.http.headers]
+  Content-Type = "application/json"
+  # custom header field
+  Micrometer-Metrics = "true"
+
+  # Pass only those metrics that has below tag set
+  [outputs.http.tagpass]
+  micrometer_metrics = ["true"]
+
+{% if telegraf_fileout_enabled %}
+[[outputs.file]]
+  ## Files to write to, "stdout" is a specially handled file.
+  files = ["/app/log/metrics.out"]
+
+  ## The file will be rotated after the time interval specified.  When set
+  ## to 0 no time based rotation is performed.
+  # rotation_interval = "12h"
+
+  ## The logfile will be rotated when it becomes larger than the specified
+  ## size.  When set to 0 no size based rotation is performed.
+  rotation_max_size = "10MB"
+
+  ## Maximum number of rotated archives to keep, any older logs are deleted.
+  ## If set to -1, no archives are removed.
+  rotation_max_archives = 5
+
+  ## Data format to output.
+  ## Each data format has its own unique set of configuration options, read
+  ## more about them here:
+  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_OUTPUT.md
+  data_format = "influx"
+
+  # tagexclude drops any non-relevant tags
+  tagexclude = ["host"]
+
+  # Drop `mx_runtime_user_login` metrics
+  # We drop them as we don't want it to be part of
+  # the payload which is used for Cloud graphs
+  namedrop = ["mx_runtime_user_login"]
+
+  # Pass only those metrics that has below tag set
+  [outputs.file.tagpass]
+  micrometer_metrics = ["true"]
+  internal_metrics = ["true"]
+
+{% endif %}
+####################################################################################
 {% endif %}

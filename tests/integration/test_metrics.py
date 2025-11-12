@@ -13,7 +13,7 @@ class TestCaseEmitMetrics(basetest.BaseTestWithPostgreSQL):
     # destination.
     def test_read_metrics_in_logs(self):
         self.stage_container(
-            "sample-6.2.0.mda", env_vars={"METRICS_INTERVAL": "10"}
+            "Mendix8.1.1.58432_StarterApp.mda", env_vars={"METRICS_INTERVAL": "10"}
         )
         self.start_container()
 
@@ -25,7 +25,7 @@ class TestCaseEmitMetrics(basetest.BaseTestWithPostgreSQL):
 
     def test_free_apps_metrics(self):
         self.stage_container(
-            "sample-6.2.0.mda",
+            "Mendix8.1.1.58432_StarterApp.mda",
             env_vars={"METRICS_INTERVAL": "10", "PROFILE": "free"},
         )
         self.start_container()
@@ -36,10 +36,10 @@ class TestCaseEmitMetrics(basetest.BaseTestWithPostgreSQL):
         self.assert_string_in_recent_logs("named_user_sessions")
 
 
-class TestNewMetricsFlows(basetest.BaseTestWithPostgreSQL):
+class TestNewMetricsFlows(basetest.BaseTest):
     def test_fallback_flow_when_server_unreachable(self):
         self.stage_container(
-            "sample-6.2.0.mda",
+            "Mendix8.1.1.58432_StarterApp.mda",
             env_vars={
                 "METRICS_INTERVAL": "10",
                 "BYPASS_LOGGREGATOR": "True",
@@ -51,13 +51,11 @@ class TestNewMetricsFlows(basetest.BaseTestWithPostgreSQL):
         self.start_container()
 
         assert self.await_string_in_recent_logs("MENDIX-METRICS: ", 10)
-        self.assert_string_in_recent_logs(
-            "Failed to send metrics to trends server"
-        )
+        self.assert_string_in_recent_logs("Failed to send metrics to trends server")
 
     def test_fallback_when_no_url_set(self):
         self.stage_container(
-            "sample-6.2.0.mda",
+            "Mendix8.1.1.58432_StarterApp.mda",
             env_vars={"METRICS_INTERVAL": "10", "BYPASS_LOGGREGATOR": "True"},
         )
         self.start_container()
@@ -70,7 +68,7 @@ class TestNewMetricsFlows(basetest.BaseTestWithPostgreSQL):
 
     def test_fallback_with_bad_environment_variables(self):
         self.stage_container(
-            "sample-6.2.0.mda",
+            "Mendix8.1.1.58432_StarterApp.mda",
             env_vars={
                 "METRICS_INTERVAL": "10",
                 "BYPASS_LOGGREGATOR": "this will not coerce to a boolean",
@@ -79,17 +77,15 @@ class TestNewMetricsFlows(basetest.BaseTestWithPostgreSQL):
         self.start_container()
 
         assert self.await_string_in_recent_logs("MENDIX-METRICS: ", 10)
-        self.assert_string_in_recent_logs(
-            "Bypass loggregator has a nonsensical value"
-        )
+        self.assert_string_in_recent_logs("Bypass loggregator has a nonsensical value")
 
     def test_posting_metrics_works(self):
         self.stage_container(
-            "sample-6.2.0.mda",
+            "Mendix8.1.1.58432_StarterApp.mda",
             env_vars={
                 "METRICS_INTERVAL": "10",
                 "BYPASS_LOGGREGATOR": "True",
-                "TRENDS_STORAGE_URL": "http://httpbin.org/post",
+                "TRENDS_STORAGE_URL": "http://postman-echo.com/post",
             },
         )
         self.start_container()

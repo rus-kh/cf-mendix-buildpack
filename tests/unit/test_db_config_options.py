@@ -1,71 +1,73 @@
 import datetime
+import json
 import os
-import unittest
+from unittest import TestCase, mock
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-from urllib.parse import parse_qs, urlparse, urlencode, urlunparse
+from buildpack.infrastructure.database import (
+    UrlDatabaseConfiguration,
+    get_config,
+)
+from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography import x509
 from cryptography.x509 import NameAttribute
 from cryptography.x509.base import Certificate
 from cryptography.x509.oid import NameOID
-from buildpack.runtime_components.database import (
-    get_config,
-    UrlDatabaseConfiguration,
-)
 
 
-class TestDatabaseConfigOptions(unittest.TestCase):
+class TestDatabaseConfigOptions(TestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cert_map = {}
 
-    def clean_env(self):
-
-        # Setting different environment variables for test in the same process
-        # can lead to flaky tests.
-
-        if "DATABASE_URL" in os.environ.keys():
-            del os.environ["DATABASE_URL"]
-
-        for key in filter(
-            lambda x: x.startswith("MXRUNTIME_Database"),
-            list(os.environ.keys()),
-        ):
-            del os.environ[key]
-
+    @mock.patch.dict(os.environ, {}, clear=True)
     def test_no_setup(self):
-        self.clean_env()
         with self.assertRaises(RuntimeError):
             get_config()
 
+    @mock.patch.dict(
+        os.environ,
+        {
+            "MXRUNTIME_DatabaseType": "PostgreSQL",
+            "MXRUNTIME_DatabaseJdbcUrl": "jdbc:postgresql://username:password@rdsbroker-testfree-nonprod-1-eu-west-1.asdbjasdg.eu-west-1.rds.amazonaws.com:5432/testdatabase",  # noqa: C0301
+        },
+        clear=True,
+    )
     def test_mx_runtime_db_config(self):
-
-        # Test if MXRUNTIME variables are set up if no database configuration is returned
+        # Test if MXRUNTIME variables are set up
+        # if no database configuration is returned
         # based on DATABASE_URL or VCAP_SERVICES
-
-        self.clean_env()
-        os.environ["MXRUNTIME_DatabaseType"] = "PostgreSQL"
-        os.environ[
-            "MXRUNTIME_DatabaseJdbcUrl"
-        ] = "jdbc:postgresql://username:password@rdsbroker-testfree-nonprod-1-eu-west-1.asdbjasdg.eu-west-1.rds.amazonaws.com:5432/testdatabase"  # noqa E501
-
         config = get_config()
         assert not config
 
-    def test_database_url(self):
-        self.clean_env()
-        os.environ[
-            "DATABASE_URL"
-        ] = "jdbc:postgres://user:secret@host/database"
+    DATABASE_URL_ENV = {"DATABASE_URL": "postgres://user:secret@host:5432/database"}
+    VALID_PARAMS_ENV = {
+        "DATABASE_CONNECTION_PARAMS": json.dumps(
+            {"tcpKeepAlive": "false", "connectionTimeout": 30}
+        )
+    }
 
+    @mock.patch.dict(os.environ, {**DATABASE_URL_ENV, **VALID_PARAMS_ENV}, clear=True)
+    def test_valid_jdbc_parameters(self):
+        config = get_config()
+        assert "tcpKeepAlive=false" in config["DatabaseJdbcUrl"]
+
+    INVALID_PARAMS_ENV = {"DATABASE_CONNECTION_PARAMS": '{"tcpKeepAlive": "false"'}
+
+    @mock.patch.dict(os.environ, {**DATABASE_URL_ENV, **INVALID_PARAMS_ENV}, clear=True)
+    def test_invalid_jdbc_parameters(self):
+        config = get_config()
+        assert "tcpKeepAlive=false" not in config["DatabaseJdbcUrl"]
+
+    @mock.patch.dict(os.environ, DATABASE_URL_ENV, clear=True)
+    def test_database_url(self):
         config = get_config()
         assert config
         assert config["DatabaseType"] == "PostgreSQL"
 
     def test_inline_certs(self):
         self.cert_map = CertGen().cert_map
-        self.clean_env()
         c = UrlDatabaseConfiguration
         native_params = {
             c.SSLCERT: self.get_cert("postgresql.crt"),
@@ -75,16 +77,15 @@ class TestDatabaseConfigOptions(unittest.TestCase):
         parts = urlparse("postgres://user:secret@host/database")
         parts = parts._replace(query=urlencode(native_params))
         native_url = urlunparse(parts)
-        os.environ["DATABASE_URL"] = native_url
-
-        config = get_config()
-        assert config
-        assert config["DatabaseType"] == "PostgreSQL"
-        native_params[c.SSLKEY] = self.get_cert("postgresql.pk8")
-        jdbc_params = parse_qs(urlparse(config["DatabaseJdbcUrl"]).query)
-        self.cmp_cert(native_params, jdbc_params, c.SSLCERT)
-        self.cmp_cert(native_params, jdbc_params, c.SSLROOTCERT)
-        self.cmp_cert(native_params, jdbc_params, c.SSLKEY)
+        with mock.patch.dict(os.environ, {"DATABASE_URL": native_url}, clear=True):
+            config = get_config()
+            assert config
+            assert config["DatabaseType"] == "PostgreSQL"
+            native_params[c.SSLKEY] = self.get_cert("postgresql.pk8")
+            jdbc_params = parse_qs(urlparse(config["DatabaseJdbcUrl"]).query)
+            self.cmp_cert(native_params, jdbc_params, c.SSLCERT)
+            self.cmp_cert(native_params, jdbc_params, c.SSLROOTCERT)
+            self.cmp_cert(native_params, jdbc_params, c.SSLKEY)
 
     def get_cert(self, cert_resource):
         return self.cert_map[cert_resource]
@@ -98,11 +99,10 @@ class TestDatabaseConfigOptions(unittest.TestCase):
             assert expected_string == actual_string, param + " differ"
         os.remove(actual_file)
 
-    def test_vcap(self):
-        self.clean_env()
-        os.environ[
-            "VCAP_SERVICES"
-        ] = """
+    @mock.patch.dict(
+        os.environ,
+        {
+            "VCAP_SERVICES": """
 {
  "rds-testfree": [
    {
@@ -128,9 +128,11 @@ class TestDatabaseConfigOptions(unittest.TestCase):
     "volume_mounts": []
    }
   ]
-}
-    """  # noqa
-
+}"""  # noqa
+        },
+        clear=True,
+    )
+    def test_vcap(self):
         config = get_config()
         assert config
         assert config["DatabaseType"] == "PostgreSQL"
@@ -169,17 +171,17 @@ class CertGen:
         ).decode("iso-8859-1")
 
     def _dump_cert(self, cert: Certificate, out_name):
-        self.cert_map[out_name] = cert.public_bytes(
-            serialization.Encoding.PEM
-        ).decode("iso-8859-1")
+        self.cert_map[out_name] = cert.public_bytes(serialization.Encoding.PEM).decode(
+            "iso-8859-1"
+        )
 
     def init_root_cert(self):
         self.root_key = self._newkey()
         ca_subj = x509.Name(
             [
-                NameAttribute(NameOID.COUNTRY_NAME, u"US"),
-                NameAttribute(NameOID.ORGANIZATION_NAME, u"Authority, Inc"),
-                NameAttribute(NameOID.COMMON_NAME, u"Authority CA"),
+                NameAttribute(NameOID.COUNTRY_NAME, "US"),
+                NameAttribute(NameOID.ORGANIZATION_NAME, "Authority, Inc"),
+                NameAttribute(NameOID.COMMON_NAME, "Authority CA"),
             ]
         )
         self.root_cert = self._sign(
@@ -190,9 +192,9 @@ class CertGen:
         self.postgresql_key = self._newkey()
         subj = x509.Name(
             [
-                NameAttribute(NameOID.COUNTRY_NAME, u"US"),
-                NameAttribute(NameOID.ORGANIZATION_NAME, u"Authority, Inc"),
-                NameAttribute(NameOID.COMMON_NAME, u"SQL Client"),
+                NameAttribute(NameOID.COUNTRY_NAME, "US"),
+                NameAttribute(NameOID.ORGANIZATION_NAME, "Authority, Inc"),
+                NameAttribute(NameOID.COMMON_NAME, "SQL Client"),
             ]
         )
         self.postgresql_cert = self._sign(

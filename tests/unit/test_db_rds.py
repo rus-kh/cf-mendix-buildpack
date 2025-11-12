@@ -1,13 +1,14 @@
 import os
+from unittest import TestCase
 
-from buildpack.runtime_components.database import DatabaseConfigurationFactory
+from buildpack.infrastructure.database import DatabaseConfigurationFactory
 
 # IMPORTANT: to run this test successfully you need to set PYTHONPATH before
 # running nosetest.
 # export PYTHONPATH=<buildpack-root>/lib
 
 
-class TestCaseRdsDryRun:
+class TestCaseRdsDryRun(TestCase):
 
     rds_vcap_example = """
 {
@@ -76,7 +77,7 @@ class TestCaseRdsDryRun:
         assert config["DatabaseType"] == "PostgreSQL"
         assert (
             config["DatabaseHost"]
-            == "rdsbroker-testfree-nonprod-1-eu-west-1.asdbjasdg.eu-west-1.rds.amazonaws.com:5432"  # noqa: E501
+            == "rdsbroker-testfree-nonprod-1-eu-west-1.asdbjasdg.eu-west-1.rds.amazonaws.com:5432"  # noqa: C0301
         )
         assert config["DatabaseName"] == "dbuajsdhkasdhaks"
         assert config["DatabaseJdbcUrl"].find("tcpKeepAlive") >= 0
@@ -90,7 +91,7 @@ class TestCaseRdsDryRun:
         assert config["DatabaseType"] == "PostgreSQL"
         assert (
             config["DatabaseHost"]
-            == "rdsbroker-testfree-nonprod-1-eu-west-1.asdbjasdg.eu-west-1.rds.amazonaws.com:5432"  # noqa: E501
+            == "rdsbroker-testfree-nonprod-1-eu-west-1.asdbjasdg.eu-west-1.rds.amazonaws.com:5432"  # noqa: C0301
         )
         assert config["DatabaseName"] == "dbuajsdhkasdhaks"
         assert config["DatabaseJdbcUrl"].find("tcpKeepAlive") >= 0

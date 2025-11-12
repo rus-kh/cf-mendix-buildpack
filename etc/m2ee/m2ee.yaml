@@ -1,3 +1,4 @@
+---
 mxnode:
   mxjar_repo: BUILD_PATH/runtimes/
 
@@ -5,6 +6,7 @@ m2ee:
   app_name: My Project Name
   app_base: BUILD_PATH/
   admin_port: ADMIN_PORT
+  admin_listen_addresses: "*"
   custom_environment:
     HOME: BUILD_PATH
   javabin: BUILD_PATH/.local/bin/java
@@ -21,8 +23,8 @@ m2ee:
     [
       "-Dfile.encoding=UTF-8",
       "-Djava.io.tmpdir=BUILD_PATH/data/tmp",
-      "-XX:OnError=kill -s USR1 PYTHONPID",
-      "-XX:OnOutOfMemoryError=kill -s USR2 PYTHONPID",
+      "-XX:OnError=BUILD_PATH/.local/scripts/on_error.sh",
+      "-XX:OnOutOfMemoryError=BUILD_PATH/.local/scripts/on_out_of_memory_error.sh",
     ]
 
   jetty:
@@ -40,7 +42,7 @@ logging:
     name: FileSubscriber
     autosubscribe: INFO
     filename: BUILD_PATH/log/out.log
-    max_size: 1125899906842624 # 1PiB should be enough until we implement stdout logging
+    max_size: 1125899906842624  # 1PiB should be enough until we implement stdout logging
     max_rotation: 1
 
 mxruntime:
