@@ -15,7 +15,7 @@ SIDECAR_CONFIG_FILE = "conf.json"
 
 def _download(build_path, cache_dir):
     util.download_and_unpack(
-        "https://eu-west-1.console.aws.amazon.com/s3/object/mx-cdn-test2?region=eu-west-1&prefix=mx-buildpack/experimental/metering/metering-sidecar-linux-amd64-v2.0.0.tar.gz",
+        "https://mx-cdn-test2.s3.eu-west-1.amazonaws.com/mx-buildpack/experimental/metering/metering-sidecar-test.tar.gz",
         os.path.join(build_path, NAMESPACE),
         cache_dir=cache_dir,
     )
