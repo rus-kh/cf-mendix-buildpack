@@ -106,10 +106,9 @@ def stage(buildpack_path, build_path, cache_dir):
             )
         else:
             logging.info("Usage metering is NOT enabled")
-    except Exception:
+    except Exception as e:
         logging.info(
-            "Encountered an exception while staging the metering sidecar. "
-            "This is nothing to worry about."
+            f"Encountered an exception while staging the metering sidecar: {e}"
         )
 
 
