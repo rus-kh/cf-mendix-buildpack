@@ -94,10 +94,10 @@ def stage(buildpack_path, build_path, cache_dir):
             logging.info("Usage metering is enabled")
             _download(buildpack_path, build_path, cache_dir)
 
-            project_id = _get_project_id(
-                os.path.join(build_path, "model", "metadata.json")
-            )
-            config = {"ProjectID": project_id}
+            # project_id = _get_project_id(
+            #     os.path.join(build_path, "model", "metadata.json")
+            # )
+            config = {"ProjectID": "ac378eea-6f7e-4161-b6c7-42c95650e614"}
 
             logging.info("Writing metering sidecar configuration file...")
             write_file(
