@@ -13,7 +13,7 @@ SIDECAR_DIR = os.path.join("/home/vcap/app", NAMESPACE)
 SIDECAR_CONFIG_FILE = "conf.json"
 
 
-def _download(build_path, cache_dir):
+def _download(buildpack_dir, build_path, cache_dir):
     util.resolve_metering_dependency(
         DEPENDENCY,
         os.path.join(build_path, NAMESPACE),
